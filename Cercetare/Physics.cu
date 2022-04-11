@@ -22,16 +22,17 @@ void Physics::Step(GameState& gameState, bool verbose)
 
 	CubDebugExit(cudaEventCreate(&start));
 	CubDebugExit(cudaEventCreate(&stop));
+
 	CubDebugExit(cudaEventRecord(start, 0));
 
-	gameState.ApplyForces();
+	gameState.UpdateDevice();
 
 	CubDebugExit(cudaEventRecord(stop, 0));
 	CubDebugExit(cudaEventSynchronize(stop));
 	CubDebugExit(cudaEventElapsedTime(&time, start, stop));
 
 	if (verbose) {
-		printf("Time to apply forces:  %3.3f ms \n", time);
+		printf("Time to update device buffers:  %3.3f ms \n", time);
 	}
 
 	CubDebugExit(cudaEventRecord(start, 0));
@@ -60,9 +61,7 @@ void Physics::Step(GameState& gameState, bool verbose)
 
 	CubDebugExit(cudaEventRecord(start, 0));
 
-	m_bvh.NarrowPhase(gameState.GetDeviceOldPositions(), d_positions, nrEntities);
-
-	gameState.UpdateHostPositions();
+	m_bvh.NarrowPhase(gameState.GetDeviceOldPositions(), d_positions, gameState.GetDeviceImpulses(), gameState.GetDeviceCorrections(), gameState.GetDeviceCollisionsNr(), nrEntities);
 
 	CubDebugExit(cudaEventRecord(stop, 0));
 	CubDebugExit(cudaEventSynchronize(stop));
@@ -70,6 +69,18 @@ void Physics::Step(GameState& gameState, bool verbose)
 
 	if (verbose) {
 		printf("Time for physics narrow phase:  %3.3f ms \n", time);
+	}
+
+	CubDebugExit(cudaEventRecord(start, 0));
+
+	gameState.ApplyForces();
+
+	CubDebugExit(cudaEventRecord(stop, 0));
+	CubDebugExit(cudaEventSynchronize(stop));
+	CubDebugExit(cudaEventElapsedTime(&time, start, stop));
+
+	if (verbose) {
+		printf("Time to apply forces:  %3.3f ms \n", time);
 	}
 
 	// m_bvh.NrCollisions(nrEntities);

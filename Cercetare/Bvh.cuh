@@ -9,7 +9,7 @@ public:
 	void Build(glm::vec3* d_positions, int arraySize);
 
 	void BroadPhase(glm::vec3* d_positions, int arraySize);
-	void NarrowPhase(glm::vec3* d_oldPositions, glm::vec3* d_positions, int arraySize);
+	void NarrowPhase(glm::vec3* d_oldPositions, glm::vec3* d_positions, glm::vec3* d_impulses, glm::vec3* d_corrections, float* d_collisionsNr, int arraySize);
 	void NrCollisions(int arraySize);
 
 private:
@@ -23,5 +23,4 @@ private:
 	int* d_atom;
 	Node* d_leafNodes;
 	Node* d_internalNodes;
-	glm::vec3* d_finalPositions;
 };

@@ -2,29 +2,45 @@
 #include "SimulationSettings.cuh"
 #include <iostream>
 
-__global__ void updatePositions(unsigned char* actions, glm::vec3* positions, float speed, int N)
+__global__ void updatePositions(unsigned char* actions, glm::vec3* oldPositions, glm::vec3* impulses, glm::vec3* corrections, glm::vec3* positions, float* collisionsNr, float speed, int N)
 {
 	int idx = threadIdx.x + blockDim.x * blockIdx.x;
 	if (idx < N) {
-		positions[idx].y -= speed;
-		switch (actions[idx]) {
+		glm::vec3& pos = positions[idx];
+		glm::vec3& oldPos = oldPositions[idx];
+		glm::vec3 forces = glm::vec3(0.0f, -10.0f, 0.0f);
+		glm::vec3 velocity = pos - oldPos + impulses[idx]; // / collisionsNr[idx]; // poate impulses derivat in functie de oldPOs ca sa nu mai fie alocat si impulses
+		
+		oldPos = pos;
+
+		float deltaTimeSq = 1.0f / 3600.0f;
+
+		pos += velocity * 0.98f + forces * deltaTimeSq; // <<<< tangential impulse s-ar putea sa fie nevoie
+
+		pos += corrections[idx];
+		/*switch (actions[idx]) {
 			case 0:
 				break;
 			case 1:
-				positions[idx].z += speed;
+				pos.z += speed;
 				break;
 			case 2:
-				positions[idx].x += speed;
+				pos.x += speed;
 				break;
 			case 3:
-				positions[idx].z -= speed;
+				pos.z -= speed;
 				break;
 			case 4:
-				positions[idx].x -= speed;
+				pos.x -= speed;
 				break;
 			default:
 				break;
-		}
+		}*/
+
+
+		pos.x = fminf(fmaxf(pos.x, 2.0f), 1023.0f);
+		pos.y = fminf(fmaxf(pos.y, 2.0f), 1023.0f);
+		pos.z = fminf(fmaxf(pos.z, 2.0f), 1023.0f);
 	}
 }
 
@@ -40,7 +56,10 @@ GameState::GameState() {
 
 	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_positions, sizeof(glm::vec3) * N));
 	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_oldPositions, sizeof(glm::vec3) * N));
+	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_impulses, sizeof(glm::vec3) * N));
+	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_corrections, sizeof(glm::vec3) * N));
 	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_actions, sizeof(unsigned char) * N));
+	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_collisionsNr, sizeof(float) * N));
 }
 
 GameState::~GameState() {
@@ -57,22 +76,28 @@ void GameState::AddActionToEntityId(unsigned int id, unsigned char action) {
 }
 
 void GameState::ApplyForces() {
-	CubDebugExit(cudaMemcpy(d_positions, h_positions, sizeof(glm::vec3) * m_nrEntities, cudaMemcpyHostToDevice));
-	CubDebugExit(cudaMemcpy(d_actions, h_actions, sizeof(unsigned char) * m_nrEntities, cudaMemcpyHostToDevice));
-
 	int blockSize = 256;
 	int numBlocks = (m_nrEntities + blockSize - 1) / blockSize;
 
-	updatePositions<<<numBlocks, blockSize>>>(d_actions, d_positions, SimulationSettings::GetSpeed(), m_nrEntities);
+	updatePositions<<<numBlocks, blockSize>>>(d_actions, d_oldPositions, d_impulses, d_corrections, d_positions, d_collisionsNr, SimulationSettings::GetSpeed(), m_nrEntities);
+
+	UpdateHost();
+	// memset(h_actions, 0, m_nrEntities);
+}
+
+void GameState::UpdateDevice() {
+	CubDebugExit(cudaMemcpy(d_positions, h_positions, sizeof(glm::vec3) * m_nrEntities, cudaMemcpyHostToDevice));
+	CubDebugExit(cudaMemcpy(d_actions, h_actions, sizeof(unsigned char) * m_nrEntities, cudaMemcpyHostToDevice));
+	CubDebugExit(cudaMemset(d_impulses, 0, sizeof(glm::vec3) * m_nrEntities));
+	CubDebugExit(cudaMemset(d_corrections, 0, sizeof(glm::vec3) * m_nrEntities));
+	CubDebugExit(cudaMemset(d_collisionsNr, 0, sizeof(float) * m_nrEntities));
 
 	if (m_initOldPositions) {
 		m_initOldPositions = false;
 		CubDebugExit(cudaMemcpy(d_oldPositions, d_positions, sizeof(glm::vec3) * m_nrEntities, cudaMemcpyDeviceToDevice));
 	}
-
-	// memset(h_actions, 0, m_nrEntities);
 }
 
-void GameState::UpdateHostPositions() {
+void GameState::UpdateHost() {
 	CubDebugExit(cudaMemcpy(h_positions, d_positions, sizeof(glm::vec3) * m_nrEntities, cudaMemcpyDeviceToHost));
 }

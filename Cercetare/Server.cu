@@ -23,7 +23,7 @@ Server::~Server()
 void Server::Start()
 {
     Address receiver(127, 0, 0, 1, 30000);
-    Address sender(192, 168, 0, 111, 30000);
+    Address sender(192, 168, 0, 113, 30000);
     unsigned char buffer[256];
     int bytes;
 

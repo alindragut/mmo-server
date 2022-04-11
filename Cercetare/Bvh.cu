@@ -280,12 +280,12 @@ __global__ void queryBVH(Node* root, Node* nodes, int N, glm::vec3* pos, unsigne
 	}
 }
 
-#define penSlack 0.01f
-#define linearProjPercent 0.5f
+#define penSlack 0.00f
+#define linearProjPercent 0.8f
 
 #define RADIUS_SUM (2.0f * RADIUS)
 #define RADIUS_SUM_SQ RADIUS_SUM * RADIUS_SUM
-__global__ void narrowPhase(unsigned int* keysColliding, glm::vec3* oldPos, glm::vec3* pos, glm::vec3* finalPos, int N) {
+__global__ void narrowPhase(unsigned int* keysColliding, glm::vec3* oldPos, glm::vec3* pos, glm::vec3* impulses, glm::vec3* corrections, float* d_collisionsNr, int N) {
 	int idx = threadIdx.x + blockDim.x * blockIdx.x;
 
 	if (idx < N) {
@@ -318,31 +318,72 @@ __global__ void narrowPhase(unsigned int* keysColliding, glm::vec3* oldPos, glm:
 
 			float depth = fmaxf(fabsf(sqrt(length_sq) - RADIUS_SUM) * 0.5f - penSlack, 0.0f);
 
-			glm::vec3 impulse = collisionNormal * (-velNormalDot * 0.5f + depth);
+			glm::vec3 correction = collisionNormal * depth * 0.5f;
+
+			float impulseMagn = -velNormalDot * 0.5f;
+
+			glm::vec3 impulse = collisionNormal * impulseMagn;
 			
-			glm::vec3& finalPosA = finalPos[thisCollisionIdx];
-			glm::vec3& finalPosB = finalPos[otherCollisionIdx];
+			glm::vec3& impulseA = impulses[thisCollisionIdx];
+			glm::vec3& impulseB = impulses[otherCollisionIdx];
 
-			atomicAdd(&finalPosA.x, -impulse.x);
-			atomicAdd(&finalPosA.y, -impulse.y);
-			atomicAdd(&finalPosA.z, -impulse.z);
+			atomicAdd(&impulseA.x, -impulse.x);
+			atomicAdd(&impulseA.y, -impulse.y);
+			atomicAdd(&impulseA.z, -impulse.z);
 
-			atomicAdd(&finalPosB.x, impulse.x);
-			atomicAdd(&finalPosB.y, impulse.y);
-			atomicAdd(&finalPosB.z, impulse.z);
+			atomicAdd(&impulseB.x, impulse.x);
+			atomicAdd(&impulseB.y, impulse.y);
+			atomicAdd(&impulseB.z, impulse.z);
+
+			glm::vec3& correctionA = corrections[thisCollisionIdx];
+			glm::vec3& correctionB = corrections[otherCollisionIdx];
+
+			atomicAdd(&correctionA.x, -correction.x);
+			atomicAdd(&correctionA.y, -correction.y);
+			atomicAdd(&correctionA.z, -correction.z);
+
+			atomicAdd(&correctionB.x, correction.x);
+			atomicAdd(&correctionB.y, correction.y);
+			atomicAdd(&correctionB.z, correction.z);
+
+			atomicAdd(&d_collisionsNr[thisCollisionIdx], 1.0f);
+			atomicAdd(&d_collisionsNr[otherCollisionIdx], 1.0f);
+
+			glm::vec3 tangFriction = relativeVelocity - (collisionNormal * glm::dot(relativeVelocity, collisionNormal));
+
+			if (fabsf(glm::length2(tangFriction)) <= FLT_EPSILON) {
+				return;
+			}
+
+			tangFriction = glm::normalize(tangFriction);
+
+			float frictionMagn = -glm::dot(relativeVelocity, tangFriction) * 0.5f;
+
+			if (fabsf(frictionMagn) <= FLT_EPSILON) {
+				return;
+			}
+
+			float friction = frictionMagn * 0.98f;
+
+			if (frictionMagn > friction) {
+				frictionMagn = impulseMagn * friction;
+			}
+			else if (frictionMagn < friction) {
+				frictionMagn = -impulseMagn  * friction;
+			}
+
+			glm::vec3 tangImpulse = tangFriction * frictionMagn;
+
+			// combinare cu impulse normal mai incolo ca sa fie doar un singur atomic add per componenta
+
+			atomicAdd(&impulseA.x, -tangImpulse.x);
+			atomicAdd(&impulseA.y, -tangImpulse.y);
+			atomicAdd(&impulseA.z, -tangImpulse.z);
+
+			atomicAdd(&impulseB.x, tangImpulse.x);
+			atomicAdd(&impulseB.y, tangImpulse.y);
+			atomicAdd(&impulseB.z, tangImpulse.z);
 		}
-	}
-}
-
-__global__ void checkBoundaries(glm::vec3* finalPos, int N) {
-	int idx = threadIdx.x + blockDim.x * blockIdx.x;
-
-	if (idx < N) {
-		glm::vec3& pos = finalPos[idx];
-
-		pos.x = fminf(fmaxf(pos.x, 2.0f), 1023.0f);
-		pos.y = fminf(fmaxf(pos.y, 2.0f), 1023.0f);
-		pos.z = fminf(fmaxf(pos.z, 2.0f), 1023.0f);
 	}
 }
 
@@ -374,7 +415,6 @@ void BVH::Init(int size) {
 	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_internalNodes, sizeof(Node) * (size - 1)));
 	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_atom, sizeof(int) * size));
 	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_keysColliding, sizeof(unsigned int) * size * MAX_COLLISIONS));
-	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_finalPositions, sizeof(glm::vec3) * size));
 }
 
 void BVH::Build(glm::vec3* d_positions, int arraySize) {
@@ -415,22 +455,13 @@ void BVH::BroadPhase(glm::vec3* d_positions, int arraySize) {
 	queryBVH<<<numBlocks, blockSize>>>(&d_internalNodes[0], d_leafNodes, arraySize, d_positions, d_keysColliding);
 }
 
-void BVH::NarrowPhase(glm::vec3* d_oldPositions, glm::vec3* d_positions, int arraySize) {
+void BVH::NarrowPhase(glm::vec3* d_oldPositions, glm::vec3* d_positions, glm::vec3* d_impulses, glm::vec3* d_corrections, float* d_collisionsNr, int arraySize) {
 	int blockSize = 256;
 	int numBlocks = (arraySize + blockSize - 1) / blockSize;
 
-	CubDebugExit(cudaMemcpy(d_finalPositions, d_positions, sizeof(glm::vec3) * arraySize, cudaMemcpyDeviceToDevice));
-
 	numBlocks = (arraySize * MAX_COLLISIONS + blockSize - 1) / blockSize;
 
-	narrowPhase<<<numBlocks, blockSize>>>(d_keysColliding, d_oldPositions, d_positions, d_finalPositions, arraySize * MAX_COLLISIONS);
-
-	numBlocks = (arraySize + blockSize - 1) / blockSize;;
-
-	checkBoundaries<<<numBlocks, blockSize>>>(d_finalPositions, arraySize);
-	CubDebugExit(cudaMemcpy(d_oldPositions, d_finalPositions, sizeof(glm::vec3) * arraySize, cudaMemcpyDeviceToDevice));
-
-	CubDebugExit(cudaMemcpy(d_positions, d_finalPositions, sizeof(glm::vec3) * arraySize, cudaMemcpyDeviceToDevice));
+	narrowPhase<<<numBlocks, blockSize>>>(d_keysColliding, d_oldPositions, d_positions, d_impulses, d_corrections, d_collisionsNr, arraySize * MAX_COLLISIONS);
 }
 
 void BVH::NrCollisions(int arraySize) {
