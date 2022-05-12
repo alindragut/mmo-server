@@ -24,7 +24,7 @@ void Server::Start()
 {
     Address receiver(127, 0, 0, 1, 30000);
     Address sender(192, 168, 0, 113, 30000);
-    unsigned char buffer[256];
+    unsigned char buffer[512];
     int bytes;
 
     if (!m_socket.Open(m_port))
@@ -76,12 +76,13 @@ bool Server::RunPhysics()
     return false;
 }
 
+#define SNAPSHOT_PACKET_SIZE 14
 #define ENTITIES_PER_PACKET 30
-#define PACKET_SIZE SNAPSHOTPACKET * ENTITIES_PER_PACKET
+#define MAX_PACKET_SIZE SNAPSHOT_PACKET_SIZE * ENTITIES_PER_PACKET
 void Server::SendSnapshot(const Address& address)
 {
     if (!m_snapshotBuf) {
-        m_snapshotBuf = new unsigned char[(SNAPSHOTPACKET + 1) * m_gameState.GetNrEntities()];
+        m_snapshotBuf = new unsigned char[(SNAPSHOT_PACKET_SIZE + 1) * m_gameState.GetNrEntities()];
     }
 
     unsigned int nrEntities = m_gameState.GetNrEntities();
@@ -92,27 +93,27 @@ void Server::SendSnapshot(const Address& address)
 
     for (unsigned int i = 0; i < nrEntities; i++) {
         if (i % ENTITIES_PER_PACKET == 0) {
-            m_snapshotBuf[offset++] = (nrEntities - i) > 30 ? 30 : (nrEntities - i);
+            m_snapshotBuf[offset++] = (nrEntities - i) > ENTITIES_PER_PACKET ? ENTITIES_PER_PACKET : (nrEntities - i);
         }
 
         memcpy(m_snapshotBuf + offset, &i, sizeof(short));
         memcpy(m_snapshotBuf + offset + 2, positions + i, sizeof(glm::vec3));
 
-        offset += SNAPSHOTPACKET;
+        offset += SNAPSHOT_PACKET_SIZE;
     }
 
     int bufOffset = 0;
 
     while (offset != 0) {
-        int size = PACKET_SIZE + 1;
+        int size = MAX_PACKET_SIZE + 1;
 
-        if (offset < PACKET_SIZE + 1) {
+        if (offset < MAX_PACKET_SIZE + 1) {
             size = offset;
         }
 
         // printf("size: %d offset: %d\n", size, bufOffset);
 
-        offset = std::max(0, offset - PACKET_SIZE - 1);
+        offset = std::max(0, offset - MAX_PACKET_SIZE - 1);
 
         m_socket.Send(address, m_snapshotBuf + bufOffset, size);
 

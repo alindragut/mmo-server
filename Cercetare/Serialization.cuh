@@ -3,9 +3,9 @@
 #include "CommonTypes.cuh"
 #include "GameState.cuh"
 
-#define ACTIONPACKET 3
-#define READYPACKET 5
-#define SNAPSHOTPACKET 14
+#define SNAPSHOTPACKET 0
+#define ACTIONPACKET 1
+#define READYPACKET 2
 
 namespace Serialization
 {
@@ -19,7 +19,7 @@ namespace Serialization
 			m_pos(pos)
 		{}
 
-		PlayerSnapshotPacket(unsigned char* data);
+		PlayerSnapshotPacket(unsigned char* data, GameState& gameState);
 
 		static void Encode(unsigned char* data, const glm::vec3& m_pos, unsigned short m_playerID);
 
@@ -35,7 +35,7 @@ namespace Serialization
 			m_action(action)
 		{}
 
-		PlayerActionPacket(unsigned char* data);
+		PlayerActionPacket(unsigned char* data, GameState& gameState);
 
 	} PlayerActionPacket;
 

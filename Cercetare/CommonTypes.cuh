@@ -12,10 +12,39 @@ enum NodeType {
 	Leaf
 };
 
+enum ShapeType {
+	None,
+	SphereShape,
+	BoxShape,
+	CapsuleShape
+};
+
+struct Sphere {
+	float radius;
+};
+
+struct Box {
+	glm::vec3 halfExtents;
+};
+
+struct Capsule {
+	float halfHeight;
+	float radius;
+};
+
 struct AABB {
 	glm::vec3 min;
 	glm::vec3 max;
 };
+
+typedef struct {
+	ShapeType type;
+	union {
+		Sphere sphere;
+		Box box;
+		Capsule capsule;
+	};
+} Shape;
 
 struct Node {
 	AABB aabb;
@@ -25,4 +54,10 @@ struct Node {
 	unsigned int idx;
 	unsigned int objectID;
 	NodeType nodeType;
+};
+
+struct CollisionManifold {
+	glm::vec3 collisionNormal;
+	float depth;
+	float nrContactPoints;
 };

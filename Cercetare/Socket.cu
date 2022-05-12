@@ -81,6 +81,8 @@ bool Socket::Send(const Address& destination,
     addr.sin_addr.s_addr = htonl(destination.GetAddress());
     addr.sin_port = htons(destination.GetPort());
 
+    // printf("Sending to addr: %d %d %d %d port %d\n", destination.GetA(), destination.GetB(), destination.GetC(), destination.GetD(), destination.GetPort());
+
     int sent_bytes =
         sendto(m_handle,
             (const char*)data,
@@ -117,7 +119,7 @@ int Socket::Receive(Address& sender,
     if (bytes <= 0)
         return 0;
 
-    unsigned int from_address =
+    /*unsigned int from_address =
         ntohl(from.sin_addr.s_addr);
 
     unsigned int from_port =
@@ -125,10 +127,10 @@ int Socket::Receive(Address& sender,
 
     Address fromAddress(from_address, from_port);
 
-   /* std::cout << "Packet from " << int(fromAddress.GetA()) << "." <<
+    std::cout << "Packet from " << int(fromAddress.GetA()) << "." <<
         int(fromAddress.GetB()) << "." <<
         int(fromAddress.GetC()) << "." <<
-        int(fromAddress.GetD()) << " " << from_port << " " << data << std::endl;
-        */
+        int(fromAddress.GetD()) << " " << from_port << " " << data << std::endl;*/
+        
     return bytes;
 }

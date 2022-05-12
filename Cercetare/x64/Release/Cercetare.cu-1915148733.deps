@@ -35,6 +35,7 @@ C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt\sys\stat.h
 C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt\sys\types.h
 C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt\time.h
 C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt\wchar.h
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\algorithm
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\array
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\atomic
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\cassert
@@ -68,6 +69,7 @@ C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.3110
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\iterator
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\limits
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\limits.h
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\list
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\map
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\memory
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.31.31103\include\mutex
@@ -489,8 +491,24 @@ E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\glm\vec2.hpp
 E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\glm\vec3.hpp
 E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\glm\vec4.hpp
 E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\glm\vector_relational.hpp
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\build_config.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\callback.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\config.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\connection.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\datatype.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\driver.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\exception.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\resultset.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\resultset_metadata.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\sqlstring.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\statement.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\variant.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\cppconn\warning.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\mysql_connection.h
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\jdbc\mysql_driver.h
 E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\Memory.cuh
 E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\Physics.cuh
 E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\Server.cuh
 E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\SimulationSettings.cuh
 E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\Socket.cuh
+E:\Facultate\Facultate\Cercetare\cercetare\Cercetare\Cercetare\World.cuh

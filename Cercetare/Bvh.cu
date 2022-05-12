@@ -32,7 +32,7 @@ void morton(int n, glm::vec3* centers, unsigned int* morton_codes, unsigned int*
 	if (index < n) {
 		morton_codes[index] = morton3D(centers[index].x, centers[index].y, centers[index].z);
 		keys[index] = index;
-		//printf("Morton for %d - %d\n", index, morton_codes[index]);
+		// printf("Morton for %d - %d\n", index, morton_codes[index]);
 	}
 }
 
@@ -50,7 +50,7 @@ __device__ int delta(unsigned int* sortedMortonCodes, int x, int y, int numObjec
 		return __clz(sortedMortonCodes[x] ^ sortedMortonCodes[y]);
 	}
 	return -1;
-} //fix - mai mari cred sferele
+}
 
 __device__ int findSplit(unsigned int* sortedMortonCodes, int first, int last)
 {
@@ -118,7 +118,7 @@ __device__ int2 determineRange(unsigned int* sortedMortonCodes, int numObjects, 
 }
 
 #define RADIUS 1.0f
-__global__ void initLeafNodes(int N, unsigned int* sortedObjectIDs, Node* leafNodes, glm::vec3* positions)
+__global__ void initLeafNodes(int N, unsigned int* sortedObjectIDs, Node* leafNodes, Shape* shapes, glm::vec3* positions)
 {
 	int idx = threadIdx.x + blockDim.x * blockIdx.x;
 	if (idx < N) {
@@ -126,7 +126,19 @@ __global__ void initLeafNodes(int N, unsigned int* sortedObjectIDs, Node* leafNo
 		leafNodes[idx].objectID = sortedObjectIDs[idx];
 		leafNodes[idx].nodeType = NodeType::Leaf;
 		glm::vec3& position = positions[sortedObjectIDs[idx]];
-		glm::vec3 offset = glm::vec3(RADIUS);
+		Shape& shape = shapes[sortedObjectIDs[idx]];
+		glm::vec3 offset;
+
+		if (shape.type == ShapeType::SphereShape) {
+			offset = glm::vec3(shape.sphere.radius);
+		}
+		else if (shape.type == ShapeType::BoxShape) {
+			offset = shape.box.halfExtents;
+		}
+		else {
+			offset = glm::vec3(shape.capsule.radius, shape.capsule.halfHeight, shape.capsule.radius);
+		}
+
 		leafNodes[idx].aabb.min = position - offset;
 		leafNodes[idx].aabb.max = position + offset;
 	}
@@ -247,7 +259,7 @@ __device__ void traverseIterative(Node* node, AABB& bbox, unsigned int idx, glm:
 			return;
 		}
 
-		if (overlapR && childL->nodeType == NodeType::Leaf && childRId > idx) {
+		if (overlapR && childR->nodeType == NodeType::Leaf && childRId > idx) {
 			keysColliding[keysCollidingIdx + (nrCollisions++)] = childRId;
 		}
 
@@ -280,12 +292,146 @@ __global__ void queryBVH(Node* root, Node* nodes, int N, glm::vec3* pos, unsigne
 	}
 }
 
-#define penSlack 0.00f
-#define linearProjPercent 0.8f
+__device__ bool computeCollisionManifold(CollisionManifold& manifold, float radiusA, float radiusB, const glm::vec3& posA, const glm::vec3& posB) {
+	float radiusSum = radiusA + radiusB;
+	
+	glm::vec3 d = posB - posA;
 
-#define RADIUS_SUM (2.0f * RADIUS)
-#define RADIUS_SUM_SQ RADIUS_SUM * RADIUS_SUM
-__global__ void narrowPhase(unsigned int* keysColliding, glm::vec3* oldPos, glm::vec3* pos, glm::vec3* impulses, glm::vec3* corrections, float* d_collisionsNr, int N) {
+	float lengthSq = glm::length2(d);
+
+	if (lengthSq < radiusSum * radiusSum && lengthSq > 0.0f) {
+		manifold.collisionNormal = glm::normalize(d);
+		manifold.depth = (radiusSum - sqrtf(lengthSq)) * 0.5f;
+		manifold.nrContactPoints = 1.0f;
+
+		return true;
+	}
+
+	return false;
+}
+
+__device__ bool computeCollisionManifold(CollisionManifold& manifold, const glm::vec3& halfExtentsA, const glm::vec3& halfExtentsB, const glm::vec3& posA, const glm::vec3& posB) {
+	glm::vec3 min = glm::min(posA - halfExtentsA, posB - halfExtentsB);
+	glm::vec3 max = glm::max(posA + halfExtentsA, posB + halfExtentsB);
+
+	glm::vec3 diff = 2.0f * (halfExtentsA + halfExtentsB) - (max - min);
+	glm::vec3 shouldFlip = glm::sign((posB - halfExtentsB) - (posA - halfExtentsA));
+
+	float pen = diff.x;
+	glm::vec3 norm = glm::vec3(shouldFlip.x, 0.0f, 0.0f);
+
+	if (diff.y < pen) {
+		pen = diff.y;
+		norm = glm::vec3(0.0f, shouldFlip.y, 0.0f);
+	}
+
+	if (diff.z < pen) {
+		pen = diff.z;
+		norm = glm::vec3(0.0f, 0.0f, shouldFlip.z);
+	}
+
+	manifold.collisionNormal = norm;
+	manifold.depth = pen;
+	manifold.nrContactPoints = 4.0f;
+
+	return true;
+}
+
+__device__ bool computeCollisionManifold(CollisionManifold& manifold, const glm::vec3& halfExtents, float radius, const glm::vec3& posA, const glm::vec3& posB) {
+	glm::vec3 closestPoint = glm::max(posA - halfExtents, glm::min(posB, posA + halfExtents));
+
+	glm::vec3 d = posB - closestPoint;
+
+	float lengthSq = glm::length2(d);
+
+	if (lengthSq < radius * radius) {
+		if (lengthSq <= FLT_EPSILON) {
+			float newLengthSq = glm::length2(closestPoint - posA);
+
+			if (newLengthSq <= FLT_EPSILON) {
+				return false;
+			}
+
+			manifold.collisionNormal = glm::normalize(closestPoint - posA);
+		}
+		else {
+			manifold.collisionNormal = glm::normalize(d);
+		}
+
+		manifold.depth = (radius - sqrtf(lengthSq)) * 0.5f;
+		manifold.nrContactPoints = 1.0f;
+
+		return true;
+	}
+
+	return false;
+}
+
+__device__ void closestPointOnSegment(const glm::vec3& A, const glm::vec3& B, const glm::vec3& point, glm::vec3& closestPoint) {
+	glm::vec3 AB = B - A;
+
+	closestPoint = A + fminf(fmaxf(0.0f, glm::dot(point - A, AB) / glm::length2(AB)), 1.0f) * AB;
+}
+
+__device__ bool computeCollisionManifold(CollisionManifold& manifold, const Capsule& capsuleA, const Capsule& capsuleB, const glm::vec3& posA, const glm::vec3& posB) {
+	glm::vec3 offsetA = glm::vec3(0.0f, capsuleA.halfHeight - capsuleA.radius, 0.0f);
+	glm::vec3 offsetB = glm::vec3(0.0f, capsuleB.halfHeight - capsuleB.radius, 0.0f);
+
+	glm::vec3 minA = posA - offsetA;
+	glm::vec3 maxA = posA + offsetA;
+
+	glm::vec3 minB = posB - offsetB;
+	glm::vec3 maxB = posB + offsetB;
+
+	float d0 = glm::length2(maxB - maxA);
+	float d1 = glm::length2(minB - maxA);
+	float d2 = glm::length2(maxB - minA);
+	float d3 = glm::length2(minB - minA);
+
+	glm::vec3 bestA, bestB;
+
+	if (d2 < d0 || d2 < d1 || d3 < d0 || d3 < d1)
+	{
+		bestA = minA;
+	}
+	else
+	{
+		bestA = maxA;
+	}
+
+	closestPointOnSegment(maxB, minB, bestA, bestB);
+	closestPointOnSegment(maxA, minA, bestB, bestA);
+
+	return computeCollisionManifold(manifold, capsuleA.radius, capsuleB.radius, bestA, bestB);
+}
+
+__device__ bool computeCollisionManifold(CollisionManifold& manifold, const Capsule& capsule, float radiusB, const glm::vec3& posA, const glm::vec3& posB) {
+	glm::vec3 offset = glm::vec3(0.0f, capsule.halfHeight - capsule.radius, 0.0f);
+
+	glm::vec3 minA = posA - offset;
+	glm::vec3 maxA = posA + offset;
+
+	glm::vec3 bestA;
+
+	closestPointOnSegment(maxA, minA, posB, bestA);
+
+	return computeCollisionManifold(manifold, capsule.radius, radiusB, bestA, posB);
+}
+
+__device__ bool computeCollisionManifold(CollisionManifold& manifold, const glm::vec3& halfExtents, const Capsule& capsule, const glm::vec3& posA, const glm::vec3& posB) {
+	glm::vec3 offset = glm::vec3(0.0f, capsule.halfHeight - capsule.radius, 0.0f);
+
+	glm::vec3 minB = posB - offset;
+	glm::vec3 maxB = posB + offset;
+
+	glm::vec3 bestB;
+
+	closestPointOnSegment(maxB, minB, posA, bestB);
+
+	return computeCollisionManifold(manifold, halfExtents, capsule.radius, posA, bestB);
+}
+
+__global__ void narrowPhase(unsigned int* keysColliding, Shape* shapes, glm::vec3* oldPos, glm::vec3* pos, glm::vec3* impulses, glm::vec3* corrections, float* d_collisionsNr, int N) {
 	int idx = threadIdx.x + blockDim.x * blockIdx.x;
 
 	if (idx < N) {
@@ -294,36 +440,76 @@ __global__ void narrowPhase(unsigned int* keysColliding, glm::vec3* oldPos, glm:
 		if (otherCollisionIdx == -1) {
 			return;
 		}
-
+		// replace cu coliziuni cu aabb temporar; X/Y/Z penetration max pe o axa (probabil la inceput, nush daca e bine)
 		unsigned int thisCollisionIdx = idx / MAX_COLLISIONS;
 
-		glm::vec3 d = pos[otherCollisionIdx] - pos[thisCollisionIdx];
+		glm::vec3& posA = pos[thisCollisionIdx];
+		glm::vec3& posB = pos[otherCollisionIdx];
 
-		float length_sq = glm::length2(d);
+		Shape& shapeA = shapes[thisCollisionIdx];
+		Shape& shapeB = shapes[otherCollisionIdx];
 
-		if (length_sq < RADIUS_SUM_SQ && length_sq > 0.0f) {
-			glm::vec3 relativeVelocity = d - oldPos[otherCollisionIdx] + oldPos[thisCollisionIdx];
-			glm::vec3 collisionNormal = glm::normalize(d);
+		CollisionManifold manifold;
+		bool colliding;
+
+		if (shapeA.type == ShapeType::SphereShape) {
+			if (shapeB.type == ShapeType::SphereShape) {
+				colliding = computeCollisionManifold(manifold, shapeA.sphere.radius, shapeB.sphere.radius, posA, posB);
+			}
+			else if (shapeB.type == ShapeType::BoxShape) {
+				colliding = computeCollisionManifold(manifold, shapeB.box.halfExtents, shapeA.sphere.radius, posB, posA);
+				manifold.collisionNormal = -manifold.collisionNormal;
+			}
+			else if (shapeB.type == ShapeType::CapsuleShape) {
+				colliding = computeCollisionManifold(manifold, shapeB.capsule, shapeA.sphere.radius, posB, posA);
+				manifold.collisionNormal = -manifold.collisionNormal;
+			}
+		}
+		else if (shapeA.type == ShapeType::BoxShape) {
+			if (shapeB.type == ShapeType::SphereShape) {
+				colliding = computeCollisionManifold(manifold, shapeA.box.halfExtents, shapeB.sphere.radius, posA, posB);
+			}
+			else if (shapeB.type == ShapeType::BoxShape) {
+				colliding = computeCollisionManifold(manifold, shapeA.box.halfExtents, shapeB.box.halfExtents, posA, posB);
+			}
+			else if (shapeB.type == ShapeType::CapsuleShape) {
+				colliding = computeCollisionManifold(manifold, shapeA.box.halfExtents, shapeB.capsule, posA, posB);
+			}
+		}
+		else if (shapeA.type == ShapeType::CapsuleShape) {
+			if (shapeB.type == ShapeType::SphereShape) {
+				colliding = computeCollisionManifold(manifold, shapeA.capsule, shapeB.sphere.radius, posA, posB);
+			}
+			else if (shapeB.type == ShapeType::BoxShape) {
+				colliding = computeCollisionManifold(manifold, shapeB.box.halfExtents, shapeA.capsule, posB, posA);
+				manifold.collisionNormal = -manifold.collisionNormal;
+			}
+			else if (shapeB.type == ShapeType::CapsuleShape) {
+				colliding = computeCollisionManifold(manifold, shapeA.capsule, shapeB.capsule, posA, posB);
+			}
+		}
+		// de uitat pe codul lui randygaul pt contacts (incident face generation momentan) https://gamedev.stackexchange.com/questions/112883/simple-3d-obb-collision-directx9-c
+		if (colliding) {
+			// printf("Colliding A: %d %f %f %f B: %d %f %f %f normal: %f %f %f depth: %f\n", shapeA.type, posA.x, posA.y, posA.z, shapeB.type, posB.x, posB.y, posB.z,
+			//	manifold.collisionNormal.x, manifold.collisionNormal.y, manifold.collisionNormal.z, manifold.depth);
+			glm::vec3 relativeVelocity = (posB - oldPos[otherCollisionIdx]) - (posA - oldPos[thisCollisionIdx]);
+			glm::vec3 collisionNormal = manifold.collisionNormal;
+			float nrContacts = manifold.nrContactPoints;
 
 			float velNormalDot = glm::dot(relativeVelocity, collisionNormal);
 
-
-			/*printf("Collision %d with %d velNormalDot %f\n\trelative velocity %f %f %f collision normal %f %f %f\n", thisCollisionIdx, otherCollisionIdx, velNormalDot,
-				relativeVelocity.x, relativeVelocity.y, relativeVelocity.z,
-				collisionNormal.x, collisionNormal.y, collisionNormal.z);
-				*/
 			if (velNormalDot > 0.0f) {
 				return;
 			}
 
-			float depth = fmaxf(fabsf(sqrt(length_sq) - RADIUS_SUM) * 0.5f - penSlack, 0.0f);
+			// https://pybullet.org/Bullet/phpBB3/viewtopic.php?t=11286 contact points look into
 
-			glm::vec3 correction = collisionNormal * depth * 0.5f;
+			glm::vec3 correction = collisionNormal * manifold.depth * 0.5f;
 
-			float impulseMagn = -velNormalDot * 0.5f;
+			float impulseMagn = -velNormalDot * 0.5f / nrContacts;
 
 			glm::vec3 impulse = collisionNormal * impulseMagn;
-			
+
 			glm::vec3& impulseA = impulses[thisCollisionIdx];
 			glm::vec3& impulseB = impulses[otherCollisionIdx];
 
@@ -345,7 +531,7 @@ __global__ void narrowPhase(unsigned int* keysColliding, glm::vec3* oldPos, glm:
 			atomicAdd(&correctionB.x, correction.x);
 			atomicAdd(&correctionB.y, correction.y);
 			atomicAdd(&correctionB.z, correction.z);
-
+			return;
 			atomicAdd(&d_collisionsNr[thisCollisionIdx], 1.0f);
 			atomicAdd(&d_collisionsNr[otherCollisionIdx], 1.0f);
 
@@ -357,19 +543,19 @@ __global__ void narrowPhase(unsigned int* keysColliding, glm::vec3* oldPos, glm:
 
 			tangFriction = glm::normalize(tangFriction);
 
-			float frictionMagn = -glm::dot(relativeVelocity, tangFriction) * 0.5f;
+			float frictionMagn = -glm::dot(relativeVelocity, tangFriction) * 0.5f / nrContacts;
 
 			if (fabsf(frictionMagn) <= FLT_EPSILON) {
 				return;
 			}
 
-			float friction = frictionMagn * 0.98f;
+			float friction = impulseMagn * 0.98f;
 
 			if (frictionMagn > friction) {
-				frictionMagn = impulseMagn * friction;
+				frictionMagn = friction;
 			}
-			else if (frictionMagn < friction) {
-				frictionMagn = -impulseMagn  * friction;
+			else if (frictionMagn < -friction) {
+				frictionMagn = -friction;
 			}
 
 			glm::vec3 tangImpulse = tangFriction * frictionMagn;
@@ -417,7 +603,7 @@ void BVH::Init(int size) {
 	CubDebugExit(g_allocator.DeviceAllocate((void**)&d_keysColliding, sizeof(unsigned int) * size * MAX_COLLISIONS));
 }
 
-void BVH::Build(glm::vec3* d_positions, int arraySize) {
+void BVH::Build(Shape* d_shapes, glm::vec3* d_positions, int arraySize) {
 	int blockSize = 256;
 	int numBlocks = (arraySize + blockSize - 1) / blockSize;
 
@@ -437,7 +623,7 @@ void BVH::Build(glm::vec3* d_positions, int arraySize) {
 
 	CubDebugExit(g_allocator.DeviceFree(d_temp_storage));
 
-	initLeafNodes<<<numBlocks, blockSize>>>(arraySize, d_values.Current(), d_leafNodes, d_positions);
+	initLeafNodes<<<numBlocks, blockSize>>>(arraySize,d_values.Current(), d_leafNodes, d_shapes, d_positions);
 
 	createBVH<<<numBlocks, blockSize>>>(arraySize, d_keys.Current(), d_values.Current(), d_leafNodes, d_internalNodes);
 
@@ -455,13 +641,13 @@ void BVH::BroadPhase(glm::vec3* d_positions, int arraySize) {
 	queryBVH<<<numBlocks, blockSize>>>(&d_internalNodes[0], d_leafNodes, arraySize, d_positions, d_keysColliding);
 }
 
-void BVH::NarrowPhase(glm::vec3* d_oldPositions, glm::vec3* d_positions, glm::vec3* d_impulses, glm::vec3* d_corrections, float* d_collisionsNr, int arraySize) {
+void BVH::NarrowPhase(Shape* d_shapes, glm::vec3* d_oldPositions, glm::vec3* d_positions, glm::vec3* d_impulses, glm::vec3* d_corrections, float* d_collisionsNr, int arraySize) {
 	int blockSize = 256;
 	int numBlocks = (arraySize + blockSize - 1) / blockSize;
 
 	numBlocks = (arraySize * MAX_COLLISIONS + blockSize - 1) / blockSize;
 
-	narrowPhase<<<numBlocks, blockSize>>>(d_keysColliding, d_oldPositions, d_positions, d_impulses, d_corrections, d_collisionsNr, arraySize * MAX_COLLISIONS);
+	narrowPhase<<<numBlocks, blockSize>>>(d_keysColliding, d_shapes, d_oldPositions, d_positions, d_impulses, d_corrections, d_collisionsNr, arraySize * MAX_COLLISIONS);
 }
 
 void BVH::NrCollisions(int arraySize) {

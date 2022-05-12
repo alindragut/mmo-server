@@ -14,6 +14,7 @@ void Physics::Step(GameState& gameState, bool verbose)
 	cudaEvent_t start, stop;
 
 	glm::vec3* d_positions = gameState.GetDevicePositions();
+	Shape* d_shapes = gameState.GetDeviceShapes();
 	unsigned int nrEntities = gameState.GetNrEntities();
 
 	if (verbose) {
@@ -37,7 +38,7 @@ void Physics::Step(GameState& gameState, bool verbose)
 
 	CubDebugExit(cudaEventRecord(start, 0));
 
-	m_bvh.Build(d_positions, nrEntities);
+	m_bvh.Build(d_shapes, d_positions, nrEntities);
 
 	CubDebugExit(cudaEventRecord(stop, 0));
 	CubDebugExit(cudaEventSynchronize(stop));
@@ -61,7 +62,7 @@ void Physics::Step(GameState& gameState, bool verbose)
 
 	CubDebugExit(cudaEventRecord(start, 0));
 
-	m_bvh.NarrowPhase(gameState.GetDeviceOldPositions(), d_positions, gameState.GetDeviceImpulses(), gameState.GetDeviceCorrections(), gameState.GetDeviceCollisionsNr(), nrEntities);
+	m_bvh.NarrowPhase(d_shapes, gameState.GetDeviceOldPositions(), d_positions, gameState.GetDeviceImpulses(), gameState.GetDeviceCorrections(), gameState.GetDeviceCollisionsNr(), nrEntities);
 
 	CubDebugExit(cudaEventRecord(stop, 0));
 	CubDebugExit(cudaEventSynchronize(stop));

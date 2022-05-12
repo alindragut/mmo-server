@@ -13,7 +13,7 @@ CudaRuntime=Static
 CudaToolkitCustomDir=
 DebugInformationFormat=None
 DebugInformationFormat=None
-Defines=;NDEBUG;_CONSOLE;_UNICODE;UNICODE;
+Defines=STATIC_CONCPP;CPPCONN_PUBLIC_FUNC=;NDEBUG;_CONSOLE;_UNICODE;UNICODE;
 Emulation=false
 EnableVirtualArchInFatbin=true
 ExtensibleWholeProgramCompilation=false
@@ -23,7 +23,7 @@ GenerateRelocatableDeviceCode=false
 GPUDebugInfo=false
 GPUDebugInfo=false
 HostDebugInfo=false
-Include=;;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\include
+Include=C:\Program Files\MySQL\Connector C++ 8.0\include\jdbc;;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\include
 Inputs=
 InterleaveSourceInPTX=false
 Keep=false

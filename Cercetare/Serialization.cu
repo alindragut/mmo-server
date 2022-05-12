@@ -4,13 +4,16 @@
 #include <iostream>
 
 
-Serialization::PlayerSnapshotPacket::PlayerSnapshotPacket(unsigned char* data) {
-	memcpy(&m_playerID, &data[0], sizeof(unsigned short));
-	memcpy(&m_pos.x, &data[2], sizeof(float));
-	memcpy(&m_pos.y, &data[6], sizeof(float));
-	memcpy(&m_pos.z, &data[10], sizeof(float));
+Serialization::PlayerSnapshotPacket::PlayerSnapshotPacket(unsigned char* data, GameState& gameState) {
+	memcpy(&m_playerID, &data[1], sizeof(unsigned short));
+	memcpy(&m_pos.x, &data[3], sizeof(float));
+	memcpy(&m_pos.y, &data[7], sizeof(float));
+	memcpy(&m_pos.z, &data[11], sizeof(float));
 
-	// std::cout << "Player position packet: " << m_playerID << " " << m_pos.x << " " << m_pos.y << " " << m_pos.z << std::endl;
+	std::cout << "Player position packet: " << m_playerID << " " << m_pos.x << " " << m_pos.y << " " << m_pos.z << std::endl;
+
+	ShapeType type = (ShapeType)(1 + m_playerID % 3);
+	gameState.AddEntity(m_pos, type);
 }
 
 void Serialization::PlayerSnapshotPacket::Encode(unsigned char* data, const glm::vec3& m_pos, unsigned short m_playerID) {
@@ -20,31 +23,33 @@ void Serialization::PlayerSnapshotPacket::Encode(unsigned char* data, const glm:
 	memcpy(&data[10], &m_pos.z, sizeof(float));
 }
 
-Serialization::PlayerActionPacket::PlayerActionPacket(unsigned char* data)
+Serialization::PlayerActionPacket::PlayerActionPacket(unsigned char* data, GameState& gameState)
 {
-	memcpy(&m_playerID, &data[0], sizeof(short));
-	memcpy(&m_action, &data[2], sizeof(unsigned char));
+	unsigned char actionsSize = data[1];
 
-	//std::cout << "Player action packet: " << m_playerID << " " << int(m_action) << std::endl;
+	unsigned char* dataPtr = data + 2;
+
+	for (unsigned char i = 0; i < actionsSize; i++, dataPtr += 3) {
+		memcpy(&m_playerID, dataPtr, sizeof(short));
+		memcpy(&m_action, dataPtr + 2, sizeof(unsigned char));
+		gameState.AddActionToEntityId(m_playerID, m_action);
+	}
 }
 
 void Serialization::Parse(unsigned char* data, int len, GameState& gameState) {
-	switch (len) {
+	unsigned char packetType = data[0];
+
+	switch (packetType) {
+	case SNAPSHOTPACKET: {
+		PlayerSnapshotPacket snapshotPacket(data, gameState);
+		break;
+	}
 	case ACTIONPACKET: {
-		PlayerActionPacket actionPacket(data);
-		gameState.AddActionToEntityId(actionPacket.m_playerID, actionPacket.m_action);
+		PlayerActionPacket actionPacket(data, gameState);
 		break;
 	}
 	case READYPACKET: {
-		if (!strcmp((char*)data, "Ready")) {
-			gameState.SetReady();
-			std::cout << "Ready packet" << std::endl;
-		}
-		break;
-	}
-	case SNAPSHOTPACKET: {
-		PlayerSnapshotPacket snapshotPacket(data);
-		gameState.AddEntity(snapshotPacket.m_pos);
+		gameState.SetReady();
 		break;
 	}
 	default:
